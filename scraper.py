@@ -2,47 +2,54 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import unicodedata
+import time
 
-BASE_URL = "https://namazvakitleri.diyanet.gov.tr"
+def normalize_string(string):
+    string = unicodedata.normalize("NFKD", string).encode("ASCII", "ignore").decode("utf-8")
+    return string.lower().replace("ı", "i").replace("ç", "c").replace("ş", "s")\
+        .replace("ğ", "g").replace("ü", "u").replace("ö", "o").replace(" ", "").replace("-", "")
 
-def normalize(text):
-    text = unicodedata.normalize("NFKD", text).encode("ASCII", "ignore").decode("utf-8")
-    return text.lower().replace(" ", "-").replace("ı", "i").replace("ç", "c") \
-               .replace("ş", "s").replace("ğ", "g").replace("ü", "u").replace("ö", "o")
+base_url = "https://namazvakitleri.diyanet.gov.tr/tr-TR"
+headers = {"User-Agent": "Mozilla/5.0"}
 
-def get_cities():
-    res = requests.get(BASE_URL)
-    soup = BeautifulSoup(res.text, "html.parser")
-    select = soup.find("select", {"id": "ddlIlList"})
-    options = select.find_all("option")[1:]  # skip the first placeholder
-    cities = [{"name": opt.text.strip(), "value": opt["value"]} for opt in options]
-    return cities
+# Şehirleri çek
+response = requests.get(base_url, headers=headers)
+soup = BeautifulSoup(response.text, "html.parser")
 
-def get_districts(city_value):
-    res = requests.get(f"{BASE_URL}/tr-TR/{city_value}")
-    soup = BeautifulSoup(res.text, "html.parser")
-    select = soup.find("select", {"id": "ddlIlceList"})
-    if not select:
-        return []
-    options = select.find_all("option")[1:]  # skip first
-    return [{"name": opt.text.strip(), "value": opt["value"]} for opt in options]
+city_select = soup.find("select", {"id": "IlListesi"})
+cities = {
+    option.text.strip(): option["value"]
+    for option in city_select.find_all("option") if option["value"]
+}
 
-def build_district_data():
-    result = {}
-    cities = get_cities()
-    for city in cities:
-        city_key = normalize(city["name"])
-        result[city_key] = {}
-        districts = get_districts(city["value"])
-        for district in districts:
-            district_key = normalize(district["name"])
-            result[city_key][district_key] = district["value"]
-        print(f"{city['name']} ✓")
-    return result
+data = {}
 
-if __name__ == "__main__":
-    print("Veriler çekiliyor...")
-    data = build_district_data()
-    with open("districts.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print("✅ districts.json oluşturuldu.")
+for city_name, city_id in cities.items():
+    city_key = normalize_string(city_name)
+    data[city_key] = {}
+
+    print(f"[+] {city_name} ({city_key}) şehir işleniyor...")
+
+    # Şehir sayfasına git ve ilçeleri çek
+    city_url = f"{base_url}/Sehir/{city_id}"
+    try:
+        city_resp = requests.get(city_url, headers=headers)
+        city_soup = BeautifulSoup(city_resp.text, "html.parser")
+        district_select = city_soup.find("select", {"id": "IlceListesi"})
+
+        if district_select:
+            for option in district_select.find_all("option"):
+                district_name = option.text.strip()
+                district_id = option["value"]
+                district_key = normalize_string(district_name)
+                data[city_key][district_key] = district_id
+    except Exception as e:
+        print(f"[!] {city_name} ilçeleri çekilirken hata: {e}")
+
+    time.sleep(0.5)  # Diyanet sunucusunu yormamak için bekle
+
+# Dosyaya yaz
+with open("districts.json", "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+
+print("\n✅ districts.json başarıyla oluşturuldu.")
