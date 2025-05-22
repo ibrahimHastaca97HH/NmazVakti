@@ -1,4 +1,3 @@
-fastapi
-uvicorn
+Flask
 requests
 beautifulsoup4
