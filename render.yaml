@@ -1,8 +1,7 @@
 services:
   - type: web
-    name: ezan-api
+    name: nmazvakti
     env: python
-    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: ./start.sh
-    autoDeploy: true
+    plan: free
