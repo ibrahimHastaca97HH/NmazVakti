@@ -19,24 +19,18 @@ def normalize_string(string):
 def get_district_id(city: str, district: str):
     city_n = normalize_string(city)
     district_n = normalize_string(district)
-
     city_data = DISTRICTS.get(city_n)
-    if not city_data:
-        return None
-
-    return city_data.get(district_n)
+    return city_data.get(district_n) if city_data else None
 
 def fetch_prayer_times(city_district_id):
     url = f"https://namazvakitleri.diyanet.gov.tr/tr-TR/{city_district_id}"
     response = requests.get(url)
     if response.status_code != 200:
         return None
-
     soup = BeautifulSoup(response.text, "html.parser")
     table = soup.select_one('#tab-1 > div > table')
     if not table:
         return None
-
     result = []
     for row in table.select("tr"):
         cols = row.find_all("td")
@@ -58,25 +52,26 @@ def root():
     return {"message": "✅ Ezan vakitleri API aktif"}
 
 @app.get("/vakitler")
-def get_vakitler(
-    city: str = Query(..., description="Şehir adı"),
-    district: str = Query(..., description="İlçe adı")
-):
+def get_vakitler(city: str = Query(...), district: str = Query(...)):
     try:
         district_id = get_district_id(city, district)
         if not district_id:
-            return JSONResponse(
-                status_code=404,
-                content={"status": False, "error": "Şehir veya ilçe bulunamadı"}
-            )
-
+            return JSONResponse(status_code=404, content={"status": False, "error": "Şehir veya ilçe bulunamadı"})
         data = fetch_prayer_times(district_id)
         if not data:
-            return JSONResponse(
-                status_code=500,
-                content={"status": False, "error": "Vakitler alınamadı"}
-            )
-
+            return JSONResponse(status_code=500, content={"status": False, "error": "Vakitler alınamadı"})
         return {"status": True, "city": city, "district": district, "data": data}
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": False, "error": str(e)})
+
+@app.get("/sehirler")
+def get_cities():
+    return {"cities": list(DISTRICTS.keys())}
+
+@app.get("/ilceler")
+def get_districts(city: str = Query(...)):
+    city_n = normalize_string(city)
+    city_data = DISTRICTS.get(city_n)
+    if not city_data:
+        return JSONResponse(status_code=404, content={"status": False, "error": "Şehir bulunamadı"})
+    return {"districts": list(city_data.keys())}
